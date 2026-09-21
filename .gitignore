@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+node_modules/
+*.log
+*.bin
+*.ps
+.DS_Store
+.idea/
+.vscode/
+private-testdata/
+test-reports/
+docs/
+config/*.json
+!config/streams.go.example.json
+!config/streams.session-file.example.json

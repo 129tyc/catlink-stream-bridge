@@ -1,0 +1,48 @@
+{
+  "listen": ":8554",
+  "healthListen": ":8080",
+  "openDomain": "https://open.ys7.com",
+  "accounts": [
+    {
+      "id": "account-main",
+      "sessionProviderUrl": "http://catlink-session-reader:8090/v1/session",
+      "apiKey": "replace-with-internal-bridge-key"
+    }
+  ],
+  "devices": [
+    {
+      "id": "device-main",
+      "accountId": "account-main"
+    }
+  ],
+  "routes": [
+    {
+      "name": "camera-ch1-hd",
+      "deviceId": "device-main",
+      "channel": 1,
+      "quality": "hd",
+      "path": "/catlink_ch1_hd"
+    },
+    {
+      "name": "camera-ch1-sd",
+      "deviceId": "device-main",
+      "channel": 1,
+      "quality": "sd",
+      "path": "/catlink_ch1_sd"
+    },
+    {
+      "name": "camera-ch2-hd",
+      "deviceId": "device-main",
+      "channel": 2,
+      "quality": "hd",
+      "path": "/catlink_ch2_hd"
+    },
+    {
+      "name": "camera-ch2-sd",
+      "deviceId": "device-main",
+      "channel": 2,
+      "quality": "sd",
+      "path": "/catlink_ch2_sd"
+    }
+  ]
+}
