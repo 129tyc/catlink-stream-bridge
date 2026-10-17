@@ -246,7 +246,7 @@ func (r *RouteRunner) runAttempt(ctx context.Context, output *routeOutput) error
 							r.scheduleLocalProbe(time.Now())
 						}
 					} else {
-						return localErr
+						return wrapAccountGenerationError(localGeneration, localErr)
 					}
 				} else {
 					snapshot.Device = localDevice
@@ -653,6 +653,7 @@ func isAuthFailure(err error) bool {
 	return strings.Contains(value, "status 401") || strings.Contains(value, "status 403") ||
 		strings.Contains(value, "business code 401") || strings.Contains(value, "business code 403") ||
 		strings.Contains(value, "business code 1002") ||
+		strings.Contains(value, "code 10002:") ||
 		strings.Contains(value, "code 401") || strings.Contains(value, "code 403") || strings.Contains(value, "code 1002") ||
 		strings.Contains(value, "result=401") || strings.Contains(value, "result=403") || strings.Contains(value, "result=1002") ||
 		strings.Contains(value, "unauthorized") ||

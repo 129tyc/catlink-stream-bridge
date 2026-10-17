@@ -142,6 +142,8 @@ func TestAuthFailureClassification(t *testing.T) {
 		"EZOpen playback rejected: unauthorized",
 		"camera token status 403",
 		"camera token business code 1002",
+		"local device detail code 10002: accessToken过期或参数异常",
+		"local device detail code 10002: rejected",
 	} {
 		if !isAuthFailure(errors.New(message)) {
 			t.Fatalf("auth failure not classified: %s", message)
@@ -149,6 +151,9 @@ func TestAuthFailureClassification(t *testing.T) {
 	}
 	if isAuthFailure(errors.New("EZOpen websocket dial: connection reset")) {
 		t.Fatal("transport failure classified as auth failure")
+	}
+	if isAuthFailure(errors.New("local device detail code 100020: upstream failure")) {
+		t.Fatal("unrelated business code classified as auth failure")
 	}
 }
 
