@@ -49,7 +49,8 @@ func (h *Health) ServeHTTP(response http.ResponseWriter, request *http.Request) 
 	}
 	if request.URL.Path == "/readyz" {
 		status := http.StatusOK
-		if !rtsp || readyRoutes == 0 {
+		// Readiness describes this bridge's output service, not upstream cameras.
+		if !rtsp {
 			status = http.StatusServiceUnavailable
 		}
 		writeHealth(response, status, map[string]any{"ready": status == http.StatusOK, "rtsp": rtsp, "routes": readyRoutes})

@@ -8,7 +8,7 @@ RTSP 提供给 Frigate、go2rtc 或其他 RTSP 下游使用。
 ## 功能
 
 - **Cloud 模式**：通过 CATLINK/EZOpen 视频云拉取流；
-- **Local 模式**：设备和 bridge 位于同一个 LAN 时，直接连接猫砂盆的本地媒体服务；
+- **Local 模式**：设备和 bridge 位于同一个 LAN 时，直接连接设备的本地媒体服务；
 - **Auto 模式**：满足条件时优先使用 local，不可用时回退到 cloud；
 - 通过 RTSP 输出 H.265 视频和 G.711A 音频，不进行音视频重编码；
 - 通过标准 RTSP backchannel 为 Frigate/go2rtc 等客户端提供麦克风通话；
@@ -17,7 +17,7 @@ RTSP 提供给 Frigate、go2rtc 或其他 RTSP 下游使用。
 
 ## 当前支持和限制
 
-- 目前仅支持 CATLINK Visual C07 / 大白 Pro，后续会增加其他 CATLINK 可视设备的支持；
+- 支持 CATLINK Visual C07 / 大白 Pro 和 VISUAL_F05 / 饭兜；饭兜已验证 local 高清/标清取流，双向通话尚未验证；
 - 目前只测试过中国大陆 CATLINK 服务节点，其他区域节点的拉流效果尚未验证；
 - 经过实测，C07 的 local 并发最多支持三路，第四路 local 会连接失败；
 - 部分 Frigate/go2rtc WebRTC 组合可能无法同时保持视频播放和麦克风上行。开启麦克风后，协商音频上行时视频可能一直 loading 或中断。这属于客户端协商兼容性限制。
@@ -51,7 +51,7 @@ CATLINK Stream Bridge 只读取已有的 CATLINK 登录态，不接受 CATLINK �
 
 ### 独立部署 session-reader
 
-单独运行 CATLINK session-reader，由它维护 CATLINK 登录态并通过 API 发布。bridge 使用 API key 调用 session-reader 获取登录态。
+单独运行 CATLINK session-reader，读取已有的 CATLINK 登录态并通过 API 提供；它不会自行登录或刷新会话。bridge 使用 API key 调用 session-reader 获取登录态。
 
 配置示例：
 
@@ -76,6 +76,8 @@ CATLINK_GO_CONFIG_FILE=/config/streams.json /catlink-go-bridge
 ```
 
 如果没有设置环境变量，也可以把配置文件路径作为第一个命令行参数传入。
+
+配置只在启动时读取。更新挂载的配置文件后，需要重启 bridge。
 
 完整配置示例：
 
@@ -110,7 +112,7 @@ CATLINK_GO_CONFIG_FILE=/config/streams.json /catlink-go-bridge
 
 其中：
 
-- 对 C07，`channel` `1` 是外部摄像头，`channel` `2` 是内部摄像头；
+- 对 C07，`channel` `1` 是外部摄像头，`channel` `2` 是内部摄像头；饭兜使用 `channel` `1`；
 - `quality`：支持 `hd` 或 `sd`；
 - `source`：支持 `cloud`、`local`、`auto`，省略时使用现有 cloud 路径；
 - `path`：下游客户端访问的 RTSP 路径。
@@ -125,6 +127,55 @@ CATLINK_GO_CONFIG_FILE=/config/streams.json /catlink-go-bridge
     "deviceName": "大白 Pro"
   }
 }
+```
+
+### 饭兜 F05 配置
+
+在现有的 `devices` 和 `routes` 数组中追加饭兜，复用对应账号。
+`deviceName` 必须与 CATLINK App 中的设备名称一致；如果改过名字，请替换下面的值。
+同一个设备不能同时配置 `serial` 和 `selector`。
+
+```json
+{
+  "devices": [
+    {
+      "id": "feeder-main",
+      "accountId": "account-main",
+      "selector": { "deviceName": "饭兜" }
+    }
+  ],
+  "routes": [
+    {
+      "name": "feeder-hd",
+      "deviceId": "feeder-main",
+      "channel": 1,
+      "quality": "hd",
+      "source": "local",
+      "path": "/feeder_hd"
+    }
+  ]
+}
+```
+
+饭兜是竖屏视频，实测高清为 1072×1920、标清为 720×1280。
+Frigate 可以探测检测流尺寸；如果显式设置 `detect.width`、`detect.height`，
+应保持原始视频的竖屏比例。Frigate 的直播源映射需要使用对应的 go2rtc 名称：
+
+```yaml
+go2rtc:
+  streams:
+    feeder_main:
+      - rtsp://<bridge-host>:8554/feeder_hd
+cameras:
+  feeder:
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/feeder_main
+          input_args: preset-rtsp-restream
+          roles: [record, detect, audio]
+    live:
+      streams:
+        HD: feeder_main
 ```
 
 ### C07 推荐配置
@@ -157,6 +208,8 @@ CATLINK_GO_CONFIG_FILE=/config/streams.json /catlink-go-bridge
 这样可以给下游录像提供高清视频源，同时让 CATLINK App 继续使用自己的标清 live 预览。
 
 RTSP 监听端口是 `8554`，健康检查端口是 `8080`，健康检查地址是 `/healthz`。
+`/readyz` 在 RTSP 输出服务开始监听后即返回成功，不依赖上游视频是否可用；
+响应中的 `routes` 数量仅用于查看已发布路由，不影响部署就绪状态。
 
 ## Docker 部署
 

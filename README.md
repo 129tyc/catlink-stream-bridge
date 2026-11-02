@@ -9,7 +9,7 @@ Frigate, go2rtc, or other RTSP clients.
 ## Features
 
 - Cloud streaming: pulls the stream through CATLINK/EZOpen cloud services.
-- Local streaming: connects directly to the litter box on the same LAN when
+- Local streaming: connects directly to the device on the same LAN when
   the device provides the required local media session.
 - Auto mode: prefers local streaming when eligible and falls back to cloud
   streaming when local streaming is unavailable.
@@ -23,8 +23,8 @@ Frigate, go2rtc, or other RTSP clients.
 
 ## Current support and limitations
 
-- The bridge currently supports only the CATLINK Visual C07 / 大白 Pro.
-  Support for additional CATLINK camera-enabled devices will be added later.
+- The bridge supports CATLINK Visual C07 / 大白 Pro and VISUAL_F05 / 饭兜.
+  F05 local HD/SD streaming has been tested; F05 two-way audio is not yet verified.
 - Stream behavior has only been tested with CATLINK's mainland China service
   endpoint. Other CATLINK service regions have not been tested.
 - For the tested C07, local streaming supports at most three simultaneous
@@ -72,9 +72,9 @@ than one CATLINK account, use the exact auth file path instead.
 
 ### Separate session-reader deployment
 
-Run the CATLINK session-reader service separately. It owns the CATLINK login
-state and exposes it through its API; the bridge calls that API with an API
-key.
+Run the CATLINK session-reader service separately. It reads an existing
+CATLINK login session and exposes it through its API; it does not log in or
+refresh the session. The bridge calls that API with an API key.
 
 Use:
 
@@ -100,6 +100,9 @@ CATLINK_GO_CONFIG_FILE=/config/streams.json /catlink-go-bridge
 
 If the environment variable is not set, the first command-line argument is
 used as the configuration path.
+
+Configuration is read at startup. Restart the bridge after updating the
+mounted configuration file.
 
 The complete examples are:
 
@@ -135,8 +138,8 @@ Each route contains:
 ```
 
 For C07, `channel` `1` is the outer camera and `channel` `2` is the inner
-camera. `quality` can be `hd` or `sd`; `source` can be `cloud`, `local`, or
-`auto`. If `source` is omitted, the existing cloud path is used.
+camera. F05 uses `channel` `1`. `quality` can be `hd` or `sd`; `source` can
+be `cloud`, `local`, or `auto`. If `source` is omitted, the existing cloud path is used.
 
 For one device, the bridge can select the device automatically. For multiple
 devices, add a selector using the device name shown in the CATLINK App:
@@ -149,6 +152,56 @@ devices, add a selector using the device name shown in the CATLINK App:
     "deviceName": "大白 Pro"
   }
 }
+```
+
+### F05 feeder configuration
+
+Add the feeder to the existing `devices` and `routes` arrays, reusing its
+account. Use its exact name from the CATLINK App; update `deviceName` below
+if the device has been renamed. Do not combine `serial` and `selector`.
+
+```json
+{
+  "devices": [
+    {
+      "id": "feeder-main",
+      "accountId": "account-main",
+      "selector": { "deviceName": "饭兜" }
+    }
+  ],
+  "routes": [
+    {
+      "name": "feeder-hd",
+      "deviceId": "feeder-main",
+      "channel": 1,
+      "quality": "hd",
+      "source": "local",
+      "path": "/feeder_hd"
+    }
+  ]
+}
+```
+
+F05 video is portrait: the tested HD stream is 1072×1920 and SD is 720×1280.
+Frigate can probe the detection stream dimensions. If `detect.width` and
+`detect.height` are set explicitly, use the stream's portrait aspect ratio.
+The Frigate live stream mapping must refer to the configured go2rtc name:
+
+```yaml
+go2rtc:
+  streams:
+    feeder_main:
+      - rtsp://<bridge-host>:8554/feeder_hd
+cameras:
+  feeder:
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/feeder_main
+          input_args: preset-rtsp-restream
+          roles: [record, detect, audio]
+    live:
+      streams:
+        HD: feeder_main
 ```
 
 ### Recommended C07 route configuration
@@ -183,7 +236,9 @@ This provides high-definition sources for downstream recording while leaving
 the CATLINK App's own standard-definition live preview available.
 
 The bridge serves RTSP paths on port `8554` and health information on port
-`8080` at `/healthz`.
+`8080` at `/healthz`. `/readyz` returns success once the RTSP output service
+is listening, even when no upstream video is available. The `routes` count
+in its response is informational and does not gate readiness.
 
 ## Docker
 

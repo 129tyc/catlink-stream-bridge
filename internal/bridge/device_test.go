@@ -19,16 +19,16 @@ func TestResolveDeviceUsesAppVisibleSelectorAndC07DN(t *testing.T) {
 		case "/v1/session":
 			providerCalls.Add(1)
 			_, _ = io.WriteString(response, `{"token":"login","apiBase":"`+server.URL+`/"}`)
-		case "/token/device/union/list/sorted":
+		case "/token/device/union/sortedListV2":
 			listCalls.Add(1)
-			if request.Method != http.MethodGet || request.URL.Query().Get("type") != "NONE" {
+			if request.Method != http.MethodGet || request.URL.Query().Has("type") {
 				t.Errorf("unexpected device-list request: %s %s", request.Method, request.URL.String())
 			}
-			_, _ = io.WriteString(response, `{"returnCode":0,"data":{"devices":[
+			_, _ = io.WriteString(response, `{"returnCode":0,"data":[
   {"id":"api-c07","deviceName":"客厅猫砂盆","model":"大白 Pro","deviceType":"VISUAL_C07","otherExtendInfo":{"deviceSerial":"visible-c07"}},
   {"id":"api-broken-c07","deviceName":"卧室猫砂盆","model":"大白 Pro","deviceType":"VISUAL_C07","otherExtendInfo":{"deviceSerial":"visible-broken"}},
   {"id":"api-feeder","deviceName":"喂食器","model":"Visual Feeder","deviceType":"VISUAL_FEEDER"}
-]}}`)
+]}`)
 		case "/token/cameraLitterbox/info":
 			detailCalls.Add(1)
 			if request.Method != http.MethodGet || request.URL.Query().Get("deviceId") != "api-c07" {
@@ -55,6 +55,74 @@ func TestResolveDeviceUsesAppVisibleSelectorAndC07DN(t *testing.T) {
 	}
 	if providerCalls.Load() != 1 || listCalls.Load() != 1 || detailCalls.Load() != 1 {
 		t.Fatalf("calls provider=%d list=%d detail=%d", providerCalls.Load(), listCalls.Load(), detailCalls.Load())
+	}
+}
+
+func TestResolveF05ByNameAlongsideC07(t *testing.T) {
+	var listCalls, detailCalls atomic.Int32
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/session":
+			_, _ = io.WriteString(w, `{"token":"synthetic-login","apiBase":"`+server.URL+`/"}`)
+		case "/token/device/union/sortedListV2":
+			listCalls.Add(1)
+			_, _ = io.WriteString(w, `{"returnCode":0,"data":[
+    {"id":"test-c07","deviceName":"Test litter box","deviceType":"VISUAL_C07"},
+    {"id":"test-f05","deviceName":"Test feeder","deviceType":"VISUAL_F05"},
+    {"id":"test-unsupported","deviceName":"Unsupported feeder","deviceType":"FEEDER"}
+   ]}`)
+		case "/token/cameraFeeder/detail":
+			detailCalls.Add(1)
+			if r.Method != http.MethodGet || r.URL.Query().Get("deviceId") != "test-f05" {
+				t.Error("F05 detail request did not select the feeder")
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			_, _ = io.WriteString(w, `{"returnCode":0,"data":{"deviceInfo":{"dn":"synthetic-f05-dn"}}}`)
+		default:
+			t.Errorf("unexpected request path %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	manager := NewAccountTokenManager(AccountConfig{ID: "test", SessionProviderURL: server.URL + "/v1/session", APIKey: "synthetic-key"}, server.Client())
+	for range 2 {
+		serial, err := manager.ResolveDevice(context.Background(), &DeviceSelector{DeviceName: "Test feeder"})
+		if err != nil || serial != "synthetic-f05-dn" {
+			t.Fatalf("F05 resolution serial=%q err=%v", serial, err)
+		}
+	}
+	if listCalls.Load() != 1 || detailCalls.Load() != 1 {
+		t.Fatalf("cache calls list=%d detail=%d", listCalls.Load(), detailCalls.Load())
+	}
+	if _, err := manager.ResolveDevice(context.Background(), nil); err == nil {
+		t.Fatal("multiple cameras were silently auto-selected")
+	}
+	if _, err := manager.ResolveDevice(context.Background(), &DeviceSelector{DeviceName: "Unsupported feeder"}); err == nil {
+		t.Fatal("unsupported device was selectable")
+	}
+}
+
+func TestDeviceCatalogV2ResponseShape(t *testing.T) {
+	for _, test := range []struct {
+		name, body string
+		wantError  bool
+	}{
+		{"empty array", `{"returnCode":0,"data":[]}`, false},
+		{"legacy object", `{"returnCode":0,"data":{"devices":[]}}`, true},
+		{"missing data", `{"returnCode":0}`, true},
+		{"null data", `{"returnCode":0,"data":null}`, true},
+		{"API failure", `{"returnCode":1002,"data":[]}`, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, test.body) }))
+			defer server.Close()
+			catalog, err := fetchDeviceCatalog(context.Background(), server.Client(), server.URL+"/", "synthetic-token")
+			if (err != nil) != test.wantError {
+				t.Fatalf("catalog=%v err=%v wantError=%v", catalog, err, test.wantError)
+			}
+		})
 	}
 }
 

@@ -27,12 +27,11 @@ type deviceProfile struct {
 
 var cameraDeviceProfiles = map[string]deviceProfile{
 	"VISUAL_C07": {deviceType: "VISUAL_C07", detailPath: "token/cameraLitterbox/info"},
+	"VISUAL_F05": {deviceType: "VISUAL_F05", detailPath: "token/cameraFeeder/detail"},
 }
 
 func fetchDeviceCatalog(ctx context.Context, client *http.Client, apiBase, loginToken string) ([]DeviceCandidate, error) {
-	body, err := catlinkRequest(ctx, client, apiBase, loginToken, http.MethodGet, "token/device/union/list/sorted", map[string]string{
-		"type": "NONE",
-	})
+	body, err := catlinkRequest(ctx, client, apiBase, loginToken, http.MethodGet, "token/device/union/sortedListV2", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -53,15 +52,13 @@ func fetchDeviceCatalog(ctx context.Context, client *http.Client, apiBase, login
 	if len(envelope.Data) == 0 || string(envelope.Data) == "null" {
 		return nil, fmt.Errorf("device catalog has no data")
 	}
-	var data struct {
-		Devices []json.RawMessage `json:"devices"`
-	}
-	if err := json.Unmarshal(envelope.Data, &data); err != nil || data.Devices == nil {
+	var data []json.RawMessage
+	if err := json.Unmarshal(envelope.Data, &data); err != nil {
 		return nil, fmt.Errorf("device catalog has no devices")
 	}
 
-	catalog := make([]DeviceCandidate, 0, len(data.Devices))
-	for _, raw := range data.Devices {
+	catalog := make([]DeviceCandidate, 0, len(data))
+	for _, raw := range data {
 		var item struct {
 			ID              string `json:"id"`
 			DeviceName      string `json:"deviceName"`

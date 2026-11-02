@@ -94,7 +94,7 @@ func TestRouteRunnerRetriesLocallyAndKeepsHealthAlive(t *testing.T) {
 	}
 }
 
-func TestRouteRunnerDoesNotAdvertiseColdRouteAsReady(t *testing.T) {
+func TestRouteRunnerKeepsServiceReadyWithoutUpstreamMedia(t *testing.T) {
 	account := new(testAccountTokenSource)
 	health := NewHealth([]string{"camera"})
 	health.SetRTSP(true)
@@ -129,8 +129,11 @@ func TestRouteRunnerDoesNotAdvertiseColdRouteAsReady(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 	response := httptest.NewRecorder()
 	health.ServeHTTP(response, request)
-	if response.Code != http.StatusServiceUnavailable {
-		t.Fatalf("ready status=%d, want %d before first real publication", response.Code, http.StatusServiceUnavailable)
+	if response.Code != http.StatusOK {
+		t.Fatalf("ready status=%d, want %d while RTSP is listening", response.Code, http.StatusOK)
+	}
+	if publisher.lookup("/camera") != nil {
+		t.Fatal("failed upstream unexpectedly published a media route")
 	}
 	cancel()
 	select {
